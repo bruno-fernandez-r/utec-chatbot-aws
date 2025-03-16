@@ -79,7 +79,7 @@ async function runChatbot() {
   try {
     await initialize();
 
-    const searchQuery = "¿Cuál es el contacto de soporte técnico?";
+    const searchQuery = "¿Cuál es el contacto de soporte técnico para la plataforma EDU?";
     console.log(`🗣️ Consulta: ${searchQuery}`);
 
     console.log("🔍 Buscando en Pinecone...");
