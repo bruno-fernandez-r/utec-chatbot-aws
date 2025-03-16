@@ -1,5 +1,5 @@
-# 🧠 Chatbot con Pinecone, OpenAI y AWS S3
-Un chatbot inteligente que busca respuestas en documentos PDF almacenados en AWS S3 y utiliza Pinecone para búsquedas vectoriales._
+# 🤖 Chatbot con Pinecone, OpenAI y AWS S3
+Un chatbot para la Universidad Tecnológica - UTEC que busca respuestas en documentos PDF almacenados en AWS S3 y utiliza Pinecone para búsquedas vectoriales._
 ---
 
 ## 🚀 Características
