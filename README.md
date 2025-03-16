@@ -80,6 +80,10 @@ ts-node src/index.ts
 - [ ] Agregar interfaz web con Angular
 - [ ] Mejorar respuestas con RAG (Retrieval-Augmented Generation)
 - [ ] Implementar autenticación de usuarios
+- [ ] 🔥 Problema detectado: Alto consumo de tokens por consulta
+El problema es que estamos enviando todo el texto del PDF en cada consulta, lo que consume demasiados tokens innecesariamente.
+
+✅ Solución: Usar Pinecone para recuperar solo los fragmentos más relevantes antes de enviar la consulta a OpenAI.
 
 ---
 
