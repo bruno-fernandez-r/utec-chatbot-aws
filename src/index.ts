@@ -4,6 +4,7 @@ import pdfParse from "pdf-parse";
 import { uploadPDF, getPDFUrl } from "./services/awsService";
 import { generateEmbeddings, generateResponse } from "./services/openaiService";
 import { saveVectorData, searchVectorData } from "./services/pineconeService";
+import { loadCache, saveToCache, getFromCache } from "./services/cacheService"; // ✅ Importamos el caché
 import { Pinecone } from "@pinecone-database/pinecone";
 import fs from "fs";
 import * as dotenv from "dotenv";
@@ -30,8 +31,8 @@ async function getPineconeIndex() {
 async function initialize() {
   try {
     console.log("🟢 Inicializando Pinecone...");
-    const index = await getPineconeIndex();
-    console.log("✅ Pinecone inicializado correctamente:", index);
+    await getPineconeIndex();
+    console.log("✅ Pinecone inicializado correctamente.");
   } catch (error) {
     console.error("❌ Error inicializando Pinecone:", error);
   }
@@ -40,7 +41,6 @@ async function initialize() {
 // 📤 Función para subir y procesar PDFs
 async function processPDF() {
   try {
-    // Verificar si el archivo existe
     if (!fs.existsSync(filePath)) {
       console.error(`❌ El archivo ${filePath} no existe.`);
       return;
@@ -51,7 +51,7 @@ async function processPDF() {
     console.log(`✅ Archivo subido: ${s3Path}`);
 
     console.log("🔍 Extrayendo texto del PDF...");
-    const pdfData = await pdfParse(fs.readFileSync(filePath)); // ✅ Corrección sin `.default`
+    const pdfData = await pdfParse(fs.readFileSync(filePath));
     const pdfText = pdfData.text;
 
     if (!pdfText.trim()) {
@@ -60,12 +60,9 @@ async function processPDF() {
     }
 
     console.log("🧠 Generando embeddings...");
-    const embedding = await generateEmbeddings(pdfText);
+    await generateEmbeddings(pdfText);
 
-    console.log("💾 Guardando datos en Pinecone...");
-    await saveVectorData(fileName, pdfText);
-    console.log("✅ Documento guardado en Pinecone.");
-
+    console.log("✅ Documento procesado correctamente.");
     console.log("🔗 Obteniendo URL de descarga...");
     const url = await getPDFUrl(fileName);
     console.log(`📥 URL del archivo en S3: ${url}`);
@@ -78,18 +75,34 @@ async function processPDF() {
 async function runChatbot() {
   try {
     await initialize();
-
-    const searchQuery = "¿Cuál es el contacto de soporte técnico para la plataforma EDU?";
+    const searchQuery = "¿Qué es EDU?";
     console.log(`🗣️ Consulta: ${searchQuery}`);
+
+    // 🔍 Verificar caché antes de consultar
+    const cachedResponse = getFromCache(searchQuery);
+    if (cachedResponse) {
+      console.log("♻️ Respuesta obtenida del caché:", cachedResponse);
+      return;
+    } else {
+      console.log("❌ No se encontró en caché, consultando Pinecone y OpenAI...");
+    }
 
     console.log("🔍 Buscando en Pinecone...");
     const content = await searchVectorData(searchQuery);
+
+    if (!content.trim()) {
+      console.log("⚠️ No se encontraron datos relevantes en Pinecone.");
+      return;
+    }
+
     console.log(`📚 Contenido encontrado: ${content}`);
 
     console.log("🤖 Generando respuesta con GPT-4...");
-    
-    // ✅ Se pasa el contenido de Pinecone como contexto a OpenAI
     const response = await generateResponse(searchQuery, content);
+
+    // 💾 Guardamos la respuesta en caché
+    saveToCache(searchQuery, response);
+    
     console.log(`💬 Respuesta: ${response}`);
   } catch (error) {
     console.error("❌ Error ejecutando el chatbot:", error);
@@ -98,8 +111,8 @@ async function runChatbot() {
 
 // 🔄 Ejecutar el proceso
 async function main() {
-  await processPDF(); // 📤 Procesar PDF
-  await runChatbot(); // 🤖 Ejecutar chatbot
+  await processPDF();
+  await runChatbot();
 }
 
 main();

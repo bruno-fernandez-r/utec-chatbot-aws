@@ -9,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-// ✅ Función para generar embeddings con OpenAI
+// ✅ Generar embeddings
 async function generateEmbeddings(text: string): Promise<number[]> {
   try {
     console.log("📌 Generando embeddings para:", text);
@@ -25,10 +25,10 @@ async function generateEmbeddings(text: string): Promise<number[]> {
   }
 }
 
-// ✅ Función para generar respuestas con OpenAI
+// ✅ Generar respuesta con GPT usando fragmentos optimizados
 async function generateResponse(userQuery: string, context: string = ""): Promise<string> {
   try {
-    console.log("📌 Contexto proporcionado a OpenAI:", context);
+    console.log("📌 Enviando a OpenAI solo los fragmentos relevantes...");
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -36,16 +36,15 @@ async function generateResponse(userQuery: string, context: string = ""): Promis
         {
           role: "system",
           content: context
-            ? `Eres un asistente que responde preguntas basadas en el siguiente contenido: ${context}.
-               Si no encuentras información en el contenido, responde "No tengo información suficiente".`
-            : "Eres un asistente de IA experto en responder preguntas.",
+            ? `Responde la pregunta del usuario solo en base a la siguiente información: ${context}`
+            : "Responde la pregunta del usuario de manera clara y precisa.",
         },
         {
           role: "user",
           content: userQuery,
         },
       ],
-      max_tokens: 200,
+      max_tokens: 100, // 🔥 Reducimos el límite de tokens para optimizar costos
       temperature: 0.5,
     });
 

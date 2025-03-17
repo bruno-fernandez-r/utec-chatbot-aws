@@ -16,6 +16,7 @@
     "dotenv": "^16.4.7",
     "fs": "^0.0.1-security",
     "gpt-3-encoder": "^1.1.4",
+    "gpt-tokenizer": "^2.9.0",
     "openai": "^4.87.3",
     "pdf-parse": "^1.1.1"
   },

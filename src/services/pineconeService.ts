@@ -1,8 +1,8 @@
 // Este archivo manejará la lógica para interactuar con Pinecone, como guardar y buscar vectores.
 
-
-import { generateEmbeddings } from './openaiService';
-import { pinecone } from '../config/pinecone';
+import { generateEmbeddings } from "./openaiService";
+import { pinecone } from "../config/pinecone";
+import { countTokens } from "../utils/tokenCounter";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -17,13 +17,15 @@ interface PineconeMatch {
   id: string;
   score?: number;
   metadata?: {
-    content: string;
+    content?: string;
   };
 }
 
-// Guardar datos en Pinecone
+// ✅ Función para guardar datos en Pinecone
 async function saveVectorData(id: string, content: string) {
   try {
+    console.log(`📌 Generando embeddings para almacenamiento: ${id}`);
+    
     const embedding = await generateEmbeddings(content); // Generamos el embedding
 
     const objectToSave = {
@@ -35,44 +37,64 @@ async function saveVectorData(id: string, content: string) {
     // ✅ Obtener el índice de Pinecone desde las variables de entorno
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
-    // ✅ USAMOS EL NUEVO FORMATO PARA upsert
     await index.upsert([
-      objectToSave, // Ahora upsert acepta un ARRAY DIRECTO
+      objectToSave, // Pinecone acepta un array de objetos
     ]);
 
-    console.log('✅ Datos guardados correctamente en Pinecone.');
+    console.log("✅ Documento almacenado correctamente en Pinecone.");
   } catch (error) {
-    console.error('❌ Error guardando datos en Pinecone:', error);
-    throw new Error('Error guardando datos en Pinecone');
+    console.error("❌ Error guardando datos en Pinecone:", error);
+    throw new Error("Error guardando datos en Pinecone");
   }
 }
 
-// Buscar datos en Pinecone utilizando embeddings
+// ✅ Función para buscar datos en Pinecone y filtrar los más relevantes
 async function searchVectorData(query: string): Promise<string> {
   try {
-    const embedding = await generateEmbeddings(query); // Convertimos la consulta en un embedding
+    console.log(`🔍 Buscando información en Pinecone para: "${query}"`);
+
+    const embedding = await generateEmbeddings(query); // Generamos embeddings de la consulta
 
     // ✅ Obtener el índice de Pinecone desde las variables de entorno
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
     const results = await index.query({
-      vector: embedding, // Eliminamos `queryRequest`, pasamos el objeto directamente
-      topK: 4,
+      vector: embedding,
+      topK: 2, // 🔥 Se redujo topK para evitar texto innecesario
       includeMetadata: true,
     });
 
     if (!results.matches || results.matches.length === 0) {
-      return '⚠️ No se encontraron resultados.';
+      return "⚠️ No se encontraron datos relevantes.";
     }
 
-    // Aseguramos que `matches` existe y tiene la estructura esperada
-    return results.matches
-      .filter((match): match is PineconeMatch => match.metadata?.content !== undefined) // Filtramos resultados vacíos
-      .map((match) => match.metadata!.content) // Mapeamos solo los valores existentes
-      .join('. ');
+    // ✅ Eliminar duplicados y seleccionar el fragmento más relevante
+    const uniqueMatches = new Set<string>();
+    const bestMatches = results.matches
+      .map((match) => {
+        const content = match.metadata?.content;
+        return typeof content === "string" ? content.trim() : "";
+      })
+      .filter((content) => content.length > 10) // Se eliminan respuestas vacías o muy cortas
+      .filter((content) => {
+        if (uniqueMatches.has(content)) return false; // Evitar duplicados
+        uniqueMatches.add(content);
+        return true;
+      });
+
+    // 🔥 Extraer solo el fragmento más relevante basado en la consulta
+    const relevantMatch = bestMatches.find((content) =>
+      content.toLowerCase().includes(query.toLowerCase())
+    );
+
+    const finalContent = relevantMatch || bestMatches[0] || "⚠️ No se encontraron datos relevantes.";
+    
+    console.log("📚 Fragmento relevante encontrado:", finalContent);
+    
+    return finalContent;
   } catch (error) {
-    console.error('❌ Error buscando datos en Pinecone:', error);
-    throw new Error('Error buscando datos en Pinecone');
+    console.error("❌ Error buscando datos en Pinecone:", error);
+    throw new Error("Error buscando datos en Pinecone");
   }
 }
 
