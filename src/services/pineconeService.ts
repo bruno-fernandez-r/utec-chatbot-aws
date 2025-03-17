@@ -1,101 +1,81 @@
 // Este archivo manejará la lógica para interactuar con Pinecone, como guardar y buscar vectores.
 
-import { generateEmbeddings } from "./openaiService";
-import { pinecone } from "../config/pinecone";
-import { countTokens } from "../utils/tokenCounter";
+import { generateEmbeddings } from './openaiService';
+import { pinecone } from '../config/pinecone';
 import * as dotenv from "dotenv";
 
 dotenv.config();
 
-// Verificar que la variable de entorno PINECONE_INDEX está definida
 if (!process.env.PINECONE_INDEX) {
   throw new Error("❌ ERROR: PINECONE_INDEX no está definido en .env");
 }
 
-// Definir el tipo correcto para los resultados de Pinecone
-interface PineconeMatch {
-  id: string;
-  score?: number;
-  metadata?: {
-    content?: string;
-  };
-}
-
-// ✅ Función para guardar datos en Pinecone
-async function saveVectorData(id: string, content: string) {
+// ✅ Verificar si el documento ya existe en Pinecone
+async function documentExistsInPinecone(id: string): Promise<boolean> {
   try {
-    console.log(`📌 Generando embeddings para almacenamiento: ${id}`);
-    
-    const embedding = await generateEmbeddings(content); // Generamos el embedding
-
-    const objectToSave = {
-      id: id, // Pinecone requiere un string como ID
-      values: embedding, // El embedding generado es un array de números
-      metadata: { content }, // Se guarda el contenido como metadato
-    };
-
-    // ✅ Obtener el índice de Pinecone desde las variables de entorno
     const index = pinecone.index(process.env.PINECONE_INDEX!);
+    const results = await index.query({
+      vector: Array(1536).fill(0), // Vector de prueba
+      topK: 1,
+      includeMetadata: true,
+      filter: { id: id } // 🔥 Buscar por ID del archivo
+    });
 
-    await index.upsert([
-      objectToSave, // Pinecone acepta un array de objetos
-    ]);
-
-    console.log("✅ Documento almacenado correctamente en Pinecone.");
+    return results.matches.length > 0;
   } catch (error) {
-    console.error("❌ Error guardando datos en Pinecone:", error);
-    throw new Error("Error guardando datos en Pinecone");
+    console.error("❌ Error verificando existencia en Pinecone:", error);
+    return false;
   }
 }
 
-// ✅ Función para buscar datos en Pinecone y filtrar los más relevantes
+// ✅ Guardar datos en Pinecone
+async function saveVectorData(id: string, content: string) {
+  try {
+    const embedding = await generateEmbeddings(content);
+
+    const objectToSave = {
+      id: id,
+      values: embedding,
+      metadata: { content },
+    };
+
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    await index.upsert([objectToSave]);
+
+    console.log('✅ Datos guardados correctamente en Pinecone.');
+  } catch (error) {
+    console.error('❌ Error guardando datos en Pinecone:', error);
+    throw new Error('Error guardando datos en Pinecone');
+  }
+}
+
+// ✅ Buscar datos en Pinecone utilizando embeddings
 async function searchVectorData(query: string): Promise<string> {
   try {
-    console.log(`🔍 Buscando información en Pinecone para: "${query}"`);
+    const embedding = await generateEmbeddings(query);
 
-    const embedding = await generateEmbeddings(query); // Generamos embeddings de la consulta
-
-    // ✅ Obtener el índice de Pinecone desde las variables de entorno
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
     const results = await index.query({
       vector: embedding,
-      topK: 2, // 🔥 Se redujo topK para evitar texto innecesario
+      topK: 4,
       includeMetadata: true,
     });
 
     if (!results.matches || results.matches.length === 0) {
-      return "⚠️ No se encontraron datos relevantes.";
+      return '⚠️ No se encontraron resultados.';
     }
 
-    // ✅ Eliminar duplicados y seleccionar el fragmento más relevante
-    const uniqueMatches = new Set<string>();
-    const bestMatches = results.matches
-      .map((match) => {
-        const content = match.metadata?.content;
-        return typeof content === "string" ? content.trim() : "";
-      })
-      .filter((content) => content.length > 10) // Se eliminan respuestas vacías o muy cortas
-      .filter((content) => {
-        if (uniqueMatches.has(content)) return false; // Evitar duplicados
-        uniqueMatches.add(content);
-        return true;
-      });
-
-    // 🔥 Extraer solo el fragmento más relevante basado en la consulta
-    const relevantMatch = bestMatches.find((content) =>
-      content.toLowerCase().includes(query.toLowerCase())
-    );
-
-    const finalContent = relevantMatch || bestMatches[0] || "⚠️ No se encontraron datos relevantes.";
-    
-    console.log("📚 Fragmento relevante encontrado:", finalContent);
-    
-    return finalContent;
+    return results.matches
+      .filter(match => match.metadata?.content)
+      .map(match => match.metadata!.content!)
+      .join('. ');
   } catch (error) {
-    console.error("❌ Error buscando datos en Pinecone:", error);
-    throw new Error("Error buscando datos en Pinecone");
+    console.error('❌ Error buscando datos en Pinecone:', error);
+    throw new Error('Error buscando datos en Pinecone');
   }
 }
 
-export { saveVectorData, searchVectorData };
+// ✅ Exportar correctamente los métodos
+export { saveVectorData, searchVectorData, documentExistsInPinecone };

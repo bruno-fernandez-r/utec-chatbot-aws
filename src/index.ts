@@ -3,17 +3,17 @@
 import pdfParse from "pdf-parse";
 import { uploadPDF, getPDFUrl } from "./services/awsService";
 import { generateEmbeddings, generateResponse } from "./services/openaiService";
-import { saveVectorData, searchVectorData } from "./services/pineconeService";
-import { loadCache, saveToCache, getFromCache } from "./services/cacheService"; // ✅ Importamos el caché
+import { saveVectorData, searchVectorData, documentExistsInPinecone } from "./services/pineconeService";
+import { loadCache, saveToCache, getFromCache } from "./services/cacheService";
 import { Pinecone } from "@pinecone-database/pinecone";
 import fs from "fs";
 import * as dotenv from "dotenv";
+import path from "path";
 
 dotenv.config();
 
-// 📂 Archivo a procesar
-const filePath = "./documentos/test.pdf";
-const fileName = "test.pdf";
+// 📂 Carpeta de documentos
+const DOCUMENTS_FOLDER = "./documentos/";
 
 // 📌 Inicializar Pinecone
 const pinecone = new Pinecone({
@@ -31,43 +31,58 @@ async function getPineconeIndex() {
 async function initialize() {
   try {
     console.log("🟢 Inicializando Pinecone...");
-    await getPineconeIndex();
+    const index = await getPineconeIndex();
     console.log("✅ Pinecone inicializado correctamente.");
   } catch (error) {
     console.error("❌ Error inicializando Pinecone:", error);
   }
 }
 
-// 📤 Función para subir y procesar PDFs
-async function processPDF() {
+// 📤 Procesar todos los PDFs en la carpeta `documentos/`
+async function processAllPDFs() {
   try {
-    if (!fs.existsSync(filePath)) {
-      console.error(`❌ El archivo ${filePath} no existe.`);
+    const files = fs.readdirSync(DOCUMENTS_FOLDER).filter(file => file.endsWith(".pdf"));
+
+    if (files.length === 0) {
+      console.log("⚠️ No se encontraron archivos PDF en la carpeta.");
       return;
     }
 
-    console.log("📤 Subiendo archivo a S3...");
-    const s3Path = await uploadPDF(filePath, fileName);
-    console.log(`✅ Archivo subido: ${s3Path}`);
+    for (const fileName of files) {
+      const filePath = path.join(DOCUMENTS_FOLDER, fileName);
+      console.log(`📄 Procesando archivo: ${fileName}`);
 
-    console.log("🔍 Extrayendo texto del PDF...");
-    const pdfData = await pdfParse(fs.readFileSync(filePath));
-    const pdfText = pdfData.text;
+      console.log("🔍 Verificando si el documento ya está en Pinecone...");
+      const exists = await documentExistsInPinecone(fileName);
 
-    if (!pdfText.trim()) {
-      console.error("❌ No se pudo extraer texto del PDF.");
-      return;
+      if (exists) {
+        console.log(`✅ ${fileName} ya existe en Pinecone, saltando procesamiento.`);
+        continue; // 🚀 Evita procesar archivos ya indexados
+      }
+
+      console.log("📤 Subiendo archivo a S3...");
+      const s3Path = await uploadPDF(filePath, fileName);
+      console.log(`✅ Archivo subido: ${s3Path}`);
+
+      console.log("🔍 Extrayendo texto del PDF...");
+      const pdfData = await pdfParse(fs.readFileSync(filePath));
+      const pdfText = pdfData.text;
+
+      if (!pdfText.trim()) {
+        console.error(`❌ No se pudo extraer texto del PDF: ${fileName}`);
+        continue;
+      }
+
+      console.log("🧠 Generando embeddings...");
+      await saveVectorData(fileName, pdfText); // ✅ Guarda en Pinecone solo si no existía
+
+      console.log(`✅ ${fileName} procesado correctamente.`);
+      console.log("🔗 Obteniendo URL de descarga...");
+      const url = await getPDFUrl(fileName);
+      console.log(`📥 URL del archivo en S3: ${url}`);
     }
-
-    console.log("🧠 Generando embeddings...");
-    await generateEmbeddings(pdfText);
-
-    console.log("✅ Documento procesado correctamente.");
-    console.log("🔗 Obteniendo URL de descarga...");
-    const url = await getPDFUrl(fileName);
-    console.log(`📥 URL del archivo en S3: ${url}`);
   } catch (error) {
-    console.error("❌ Error en el procesamiento del PDF:", error);
+    console.error("❌ Error en el procesamiento de los PDFs:", error);
   }
 }
 
@@ -75,16 +90,16 @@ async function processPDF() {
 async function runChatbot() {
   try {
     await initialize();
-    const searchQuery = "¿Qué es EDU?";
+
+    const searchQuery = "¿Qué carreras se ofrecen en Fraybentos?";
     console.log(`🗣️ Consulta: ${searchQuery}`);
 
-    // 🔍 Verificar caché antes de consultar
+    // 🔍 Primero, buscamos en el caché
     const cachedResponse = getFromCache(searchQuery);
     if (cachedResponse) {
-      console.log("♻️ Respuesta obtenida del caché:", cachedResponse);
+      console.log("⚡ Respuesta obtenida desde caché.");
+      console.log(`💬 Respuesta: ${cachedResponse}`);
       return;
-    } else {
-      console.log("❌ No se encontró en caché, consultando Pinecone y OpenAI...");
     }
 
     console.log("🔍 Buscando en Pinecone...");
@@ -92,17 +107,18 @@ async function runChatbot() {
 
     if (!content.trim()) {
       console.log("⚠️ No se encontraron datos relevantes en Pinecone.");
+      console.log("💬 Respuesta: No tengo información suficiente.");
       return;
     }
 
-    console.log(`📚 Contenido encontrado: ${content}`);
+    console.log(`📚 Contenido relevante encontrado:\n${content}`);
 
     console.log("🤖 Generando respuesta con GPT-4...");
     const response = await generateResponse(searchQuery, content);
 
     // 💾 Guardamos la respuesta en caché
     saveToCache(searchQuery, response);
-    
+
     console.log(`💬 Respuesta: ${response}`);
   } catch (error) {
     console.error("❌ Error ejecutando el chatbot:", error);
@@ -111,8 +127,8 @@ async function runChatbot() {
 
 // 🔄 Ejecutar el proceso
 async function main() {
-  await processPDF();
-  await runChatbot();
+  await processAllPDFs(); // 📤 Procesar todos los PDFs en la carpeta `documentos/`
+  await runChatbot(); // 🤖 Ejecutar chatbot
 }
 
 main();
