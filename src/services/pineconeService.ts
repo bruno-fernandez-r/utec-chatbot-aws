@@ -11,12 +11,13 @@ if (!process.env.PINECONE_INDEX) {
 }
 
 // 📌 Configuración de segmentación y búsqueda
-const SCORE_THRESHOLD = 0.5; // 🔥 Umbral para considerar resultados relevantes
-const TOP_K = 8; // 🔍 Máximo de fragmentos a recuperar
+const SCORE_THRESHOLD = 0.5; // 🔥 Umbral de relevancia estándar
+const SCORE_FALLBACK = 0.4; // 📌 Segundo umbral si hay pocos resultados
+const TOP_K = 10; // 🔍 Máximo de fragmentos a recuperar (aumentado para mejorar precisión)
 const MIN_FRAGMENT_SIZE = 400; // 🔹 Mínimo tamaño de fragmento
 const MAX_FRAGMENT_SIZE = 1200; // 🔹 Máximo tamaño antes de dividir
 
-// ✅ Verificar si el documento ya existe en Pinecone
+// ✅ Verificar si un documento ya existe en Pinecone
 export async function documentExistsInPinecone(id: string): Promise<boolean> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -38,10 +39,8 @@ export async function documentExistsInPinecone(id: string): Promise<boolean> {
 export async function saveVectorData(id: string, content: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
-
-    // 🔍 Segmentación optimizada
     const fragments: { title: string; text: string }[] = [];
-    const sections = content.split(/\n(?=\S)/g); // 📌 Divide en bloques de contenido manteniendo títulos
+    const sections = content.split(/\n(?=\S)/g); // 📌 Divide en bloques manteniendo títulos
 
     let currentTitle = "Información General";
     let currentText = "";
@@ -49,7 +48,6 @@ export async function saveVectorData(id: string, content: string) {
     sections.forEach((section) => {
       const lines = section.trim().split("\n");
       if (lines.length === 1 && lines[0].length < 100) {
-        // 📌 Identificamos títulos cortos como encabezados
         if (currentText.length > 0) {
           fragments.push({ title: currentTitle, text: currentText });
           currentText = "";
@@ -71,7 +69,7 @@ export async function saveVectorData(id: string, content: string) {
 
     console.log(`📌 Documento segmentado en ${fragments.length} bloques.`);
 
-    // 🔥 Guardamos cada fragmento en Pinecone
+    // 🔥 Guardar cada fragmento en Pinecone
     for (let i = 0; i < fragments.length; i++) {
       const sectionId = `${id}_part${i}`;
       const embedding = await generateEmbeddings(fragments[i].text);
@@ -92,7 +90,7 @@ export async function saveVectorData(id: string, content: string) {
   }
 }
 
-// ✅ Buscar datos en Pinecone con mejor agrupación y contexto
+// ✅ Buscar datos en Pinecone optimizando agrupación y contexto
 export async function searchVectorData(query: string): Promise<string> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -100,7 +98,7 @@ export async function searchVectorData(query: string): Promise<string> {
 
     let results = await index.query({
       vector: embedding,
-      topK: TOP_K,
+      topK: TOP_K, // Aumentamos para mejorar diversidad de respuestas
       includeMetadata: true,
     });
 
@@ -113,7 +111,7 @@ export async function searchVectorData(query: string): Promise<string> {
     let relevantMatches = results.matches.filter((match) => match.score && match.score >= SCORE_THRESHOLD);
     if (relevantMatches.length < 5) {
       console.log("⚠️ Pocos resultados con score > 0.5, ampliando búsqueda...");
-      relevantMatches = results.matches.filter((match) => match.score && match.score >= 0.4);
+      relevantMatches = results.matches.filter((match) => match.score && match.score >= SCORE_FALLBACK);
     }
 
     if (relevantMatches.length === 0) {
@@ -121,24 +119,23 @@ export async function searchVectorData(query: string): Promise<string> {
       return "⚠️ No se encontraron resultados relevantes.";
     }
 
-    // 📌 Agrupar resultados por título
-    const groupedResults: Record<string, string> = {};
+    // 📌 Agrupar resultados por título sin sobrescribir información
+    const groupedResults: Record<string, string[]> = {};
 
     relevantMatches.forEach((match) => {
       const title = typeof match.metadata?.title === "string" ? match.metadata.title : "Información relevante";
       const content = typeof match.metadata?.content === "string" ? match.metadata.content : "";
 
       if (!groupedResults[title]) {
-        groupedResults[title] = "";
+        groupedResults[title] = [];
       }
 
-      groupedResults[title] += content + "\n\n";
+      groupedResults[title].push(content);
     });
 
-    // 🔥 Devolvemos máximo 5 fragmentos fusionados
+    // 🔥 Formatear la respuesta garantizando diversidad y claridad
     const finalResponse = Object.entries(groupedResults)
-      .slice(0, 5)
-      .map(([title, content]) => `🔹 *${title}*\n${content}`)
+      .map(([title, contents]) => `🔹 *${title}*\n${contents.join("\n\n")}`)
       .join("\n\n");
 
     console.log(`📚 Se encontraron ${relevantMatches.length} fragmentos relevantes.`);
