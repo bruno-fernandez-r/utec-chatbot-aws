@@ -10,18 +10,18 @@ if (!process.env.PINECONE_INDEX) {
   throw new Error("❌ ERROR: PINECONE_INDEX no está definido en .env");
 }
 
-// 📌 Configuración
-const SCORE_THRESHOLD = 0.5; // 🔥 Umbral más flexible para incluir más coincidencias
-const TOP_K = 10; // 🔥 Aumentamos el número de fragmentos recuperados
-const MIN_FRAGMENT_SIZE = 500; // 🔥 Mínimo tamaño de fragmento antes de dividir
-const MAX_FRAGMENT_SIZE = 1000; // 🔥 Máximo tamaño de fragmento antes de dividir
+// 📌 Configuración de segmentación y búsqueda
+const SCORE_THRESHOLD = 0.5; // 🔥 Umbral para considerar resultados relevantes
+const TOP_K = 8; // 🔍 Máximo de fragmentos a recuperar
+const MIN_FRAGMENT_SIZE = 400; // 🔹 Mínimo tamaño de fragmento
+const MAX_FRAGMENT_SIZE = 1200; // 🔹 Máximo tamaño antes de dividir
 
 // ✅ Verificar si el documento ya existe en Pinecone
 export async function documentExistsInPinecone(id: string): Promise<boolean> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
     const results = await index.query({
-      vector: Array(1536).fill(0), // Vector vacío solo para verificar existencia
+      vector: Array(1536).fill(0), // Vector vacío para verificar existencia
       topK: 1,
       includeMetadata: true,
       filter: { id },
@@ -34,32 +34,33 @@ export async function documentExistsInPinecone(id: string): Promise<boolean> {
   }
 }
 
-// ✅ Guardar datos en Pinecone (optimizado con fragmentación más eficiente)
+// ✅ Fragmentar y guardar datos en Pinecone
 export async function saveVectorData(id: string, content: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
-    // 🔹 Segmentación inteligente por tamaño de caracteres
+    // 🔍 Segmentación optimizada
     const fragments: { title: string; text: string }[] = [];
-    const paragraphs = content.split("\n").filter((p) => p.trim().length > 0);
+    const sections = content.split(/\n(?=\S)/g); // 📌 Divide en bloques de contenido manteniendo títulos
 
-    let currentTitle = "Información relevante";
+    let currentTitle = "Información General";
     let currentText = "";
 
-    paragraphs.forEach((paragraph) => {
-      if (paragraph.trim().length < 80) {
-        // 🔥 Detectamos títulos (menos de 80 caracteres)
+    sections.forEach((section) => {
+      const lines = section.trim().split("\n");
+      if (lines.length === 1 && lines[0].length < 100) {
+        // 📌 Identificamos títulos cortos como encabezados
         if (currentText.length > 0) {
           fragments.push({ title: currentTitle, text: currentText });
           currentText = "";
         }
-        currentTitle = paragraph.trim();
+        currentTitle = lines[0].trim();
       } else {
-        if ((currentText + paragraph).length < MAX_FRAGMENT_SIZE) {
-          currentText += paragraph + " ";
+        if ((currentText + section).length < MAX_FRAGMENT_SIZE) {
+          currentText += section + " ";
         } else {
           fragments.push({ title: currentTitle, text: currentText });
-          currentText = paragraph;
+          currentText = section;
         }
       }
     });
@@ -68,7 +69,7 @@ export async function saveVectorData(id: string, content: string) {
       fragments.push({ title: currentTitle, text: currentText });
     }
 
-    console.log(`📌 Documento fragmentado en ${fragments.length} bloques.`);
+    console.log(`📌 Documento segmentado en ${fragments.length} bloques.`);
 
     // 🔥 Guardamos cada fragmento en Pinecone
     for (let i = 0; i < fragments.length; i++) {
@@ -91,7 +92,7 @@ export async function saveVectorData(id: string, content: string) {
   }
 }
 
-// ✅ Buscar datos en Pinecone con optimización en recuperación de contexto
+// ✅ Buscar datos en Pinecone con mejor agrupación y contexto
 export async function searchVectorData(query: string): Promise<string> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -108,7 +109,7 @@ export async function searchVectorData(query: string): Promise<string> {
       return "⚠️ No se encontraron resultados.";
     }
 
-    // 🔹 Ajustamos el umbral dinámicamente si hay pocos resultados
+    // 🔍 Aplicar filtro dinámico si hay pocos resultados relevantes
     let relevantMatches = results.matches.filter((match) => match.score && match.score >= SCORE_THRESHOLD);
     if (relevantMatches.length < 5) {
       console.log("⚠️ Pocos resultados con score > 0.5, ampliando búsqueda...");
@@ -120,7 +121,7 @@ export async function searchVectorData(query: string): Promise<string> {
       return "⚠️ No se encontraron resultados relevantes.";
     }
 
-    // 📌 Fusionamos fragmentos relacionados (si comparten título)
+    // 📌 Agrupar resultados por título
     const groupedResults: Record<string, string> = {};
 
     relevantMatches.forEach((match) => {

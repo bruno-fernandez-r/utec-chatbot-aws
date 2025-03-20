@@ -2,7 +2,6 @@ import pdfParse from "pdf-parse";
 import { uploadPDF, getPDFUrl } from "./awsService";
 import { generateEmbeddings, generateResponse } from "./openaiService";
 import { saveVectorData, searchVectorData, documentExistsInPinecone } from "./pineconeService";
-import { loadCache, saveToCache, getFromCache } from "./cacheService";
 import fs from "fs";
 import path from "path";
 
@@ -50,30 +49,24 @@ export async function processAllPDFs() {
   }
 }
 
-// 🤖 Buscar consultas en la base de conocimiento
+// 🤖 Buscar consultas en la base de conocimiento y mostrar en consola
 export async function searchQuery(query: string): Promise<string> {
   try {
     console.log(`🗣️ Consulta recibida: ${query}`);
-
-    // 🔍 Buscar en caché primero
-    const cachedResponse = getFromCache(query);
-    if (cachedResponse) {
-      console.log("⚡ Respuesta obtenida desde caché.");
-      return cachedResponse;
-    }
 
     console.log("🔍 Buscando en Pinecone...");
     const content = await searchVectorData(query);
 
     if (!content.trim()) {
+      console.log("⚠️ No se encontraron datos relevantes.");
       return "⚠️ No se encontraron datos relevantes.";
     }
 
     console.log("🤖 Generando respuesta con GPT-4...");
     const response = await generateResponse(query, content);
 
-    // Guardar en caché
-    saveToCache(query, response);
+    console.log(`💬 Respuesta generada: ${response}`); // 🔥 Muestra la respuesta en la consola
+
     return response;
   } catch (error) {
     console.error("❌ Error en searchQuery:", error);
