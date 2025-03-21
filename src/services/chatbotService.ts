@@ -7,7 +7,6 @@ import path from "path";
 
 const DOCUMENTS_FOLDER = "./documentos/";
 
-// 📂 Procesar nuevos PDFs en la carpeta
 export async function processAllPDFs() {
   try {
     const files = fs.readdirSync(DOCUMENTS_FOLDER).filter(file => file.endsWith(".pdf"));
@@ -21,7 +20,6 @@ export async function processAllPDFs() {
       const filePath = path.join(DOCUMENTS_FOLDER, fileName);
       console.log(`📄 Procesando archivo: ${fileName}`);
 
-      // 🔍 Verificar si ya está en Pinecone
       const exists = await documentExistsInPinecone(fileName);
       if (exists) {
         console.log(`✅ ${fileName} ya existe en Pinecone, saltando.`);
@@ -49,8 +47,7 @@ export async function processAllPDFs() {
   }
 }
 
-// 🤖 Buscar consultas en la base de conocimiento y mostrar en consola
-export async function searchQuery(query: string): Promise<string> {
+export async function searchQuery(query: string, sessionId: string = "default"): Promise<string> {
   try {
     console.log(`🗣️ Consulta recibida: ${query}`);
 
@@ -63,9 +60,9 @@ export async function searchQuery(query: string): Promise<string> {
     }
 
     console.log("🤖 Generando respuesta con GPT-4...");
-    const response = await generateResponse(query, content);
+    const response = await generateResponse(query, content, sessionId);
 
-    console.log(`💬 Respuesta generada: ${response}`); // 🔥 Muestra la respuesta en la consola
+    console.log(`💬 Respuesta generada: ${response}`);
 
     return response;
   } catch (error) {

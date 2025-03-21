@@ -2,12 +2,12 @@
 
 import OpenAI from "openai";
 import * as dotenv from "dotenv";
+import { getHistory, appendHistory } from "./conversationMemory";
 
 dotenv.config();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
-// 🎯 Prompt de comportamiento mejorado
 const BEHAVIOR_PROMPT = `
 Tu nombre es UTEChat y eres un asistente virtual de la Universidad Tecnológica UTEC. Eres especialista en la búsqueda de información dentro de la base de conocimiento de UTEC y en el almacenamiento de información relacionada con leads.
 
@@ -35,7 +35,6 @@ Si la información recuperada no contiene una respuesta directa, indica de maner
 UTEChat debe priorizar la seguridad y confidencialidad de la información de los usuarios en todo momento, cumpliendo con normativas como ISO 27001.
 `;
 
-// ✅ Generar embeddings a partir de texto
 export async function generateEmbeddings(text: string): Promise<number[]> {
   try {
     console.log("📌 Generando embeddings...");
@@ -43,7 +42,6 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
       model: process.env.OPENAI_EMBEDDING_MODEL!,
       input: text,
     });
-
     return response.data[0].embedding;
   } catch (error) {
     console.error("❌ Error generando embeddings:", error);
@@ -51,31 +49,36 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
   }
 }
 
-// ✅ Generar respuesta con GPT optimizado
-export async function generateResponse(userQuery: string, context: string = ""): Promise<string> {
+export async function generateResponse(userQuery: string, context: string = "", sessionId = "default"): Promise<string> {
   try {
     console.log("📌 Enviando consulta a OpenAI...");
 
-    // 🔍 Filtrar y formatear el contexto
     const cleanContext = context.trim().length > 0
       ? `Aquí tienes la información disponible:\n\n${context}`
       : "No se encontraron datos relevantes para responder esta consulta.";
 
-    // 🔥 Ajustamos dinámicamente el número de tokens
-    const tokenLimit = cleanContext.length > 1500 ? 700 : 500; // Balance entre precisión y costos
+    const history = getHistory(sessionId);
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: "system", content: BEHAVIOR_PROMPT },
+      { role: "system", content: cleanContext },
+      ...history,
+      { role: "user", content: userQuery },
+    ];
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: [
-        { role: "system", content: BEHAVIOR_PROMPT }, // 🎯 Prompt base
-        { role: "system", content: cleanContext }, // 🔍 Incluir contexto
-        { role: "user", content: userQuery }, // 🤖 Consulta del usuario
-      ],
-      max_tokens: tokenLimit, // 🔥 Mayor espacio para respuestas largas
-      temperature: 0.4, // 📌 Reducción de temperatura para mayor precisión
+      messages,
+      max_tokens: cleanContext.length > 1500 ? 700 : 500,
+      temperature: 0.4,
     });
 
-    return response.choices[0]?.message?.content || "No tengo información suficiente.";
+    const reply = response.choices[0]?.message?.content || "No tengo información suficiente.";
+
+    appendHistory(sessionId, { role: "user", content: userQuery });
+    appendHistory(sessionId, { role: "assistant", content: reply });
+
+    return reply;
   } catch (error) {
     console.error("❌ Error generando respuesta con OpenAI:", error);
     return "Hubo un error generando la respuesta.";
