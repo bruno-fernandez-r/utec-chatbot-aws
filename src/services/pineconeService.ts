@@ -11,9 +11,9 @@ if (!process.env.PINECONE_INDEX) {
 }
 
 // 📌 Configuración de segmentación y búsqueda
-const SCORE_THRESHOLD = 0.5; // 🔥 Umbral de relevancia estándar
+const SCORE_THRESHOLD = 0.3; // 🔥 Umbral de relevancia estándar
 const SCORE_FALLBACK = 0.4; // 📌 Segundo umbral si hay pocos resultados
-const TOP_K = 10; // 🔍 Máximo de fragmentos a recuperar (aumentado para mejorar precisión)
+const TOP_K = 15; // 🔍 Máximo de fragmentos a recuperar (aumentado para mejorar precisión)
 const MIN_FRAGMENT_SIZE = 400; // 🔹 Mínimo tamaño de fragmento
 const MAX_FRAGMENT_SIZE = 1200; // 🔹 Máximo tamaño antes de dividir
 
