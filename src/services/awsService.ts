@@ -1,55 +1,47 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import fs from "fs";
+import AWS from 'aws-sdk';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 import * as dotenv from "dotenv";
-
 dotenv.config();
 
-// Configuración del cliente S3
-const s3 = new S3Client({
-  region: process.env.AWS_REGION!,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
+
+// Configuración del SDK de AWS
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION
 });
 
-// 📂 Subir un PDF a S3
-async function uploadPDF(filePath: string, fileName: string): Promise<string> {
-  try {
-    const fileStream = fs.createReadStream(filePath);
-    const uploadParams = {
-      Bucket: process.env.AWS_S3_BUCKET!,
-      Key: `pdfs/${fileName}`,
-      Body: fileStream,
-      ContentType: "application/pdf",
-    };
+const BUCKET_NAME = process.env.AWS_S3_BUCKET as string;
 
-    await s3.send(new PutObjectCommand(uploadParams));
-    console.log(`✅ Archivo ${fileName} subido a S3.`);
 
-    return `s3://${process.env.AWS_S3_BUCKET}/pdfs/${fileName}`;
-  } catch (error) {
-    console.error("❌ Error subiendo PDF a S3:", error);
-    throw error;
-  }
+export async function uploadFileToS3(file: Express.Multer.File, customPath: string): Promise<string> {
+  const fileExtension = path.extname(file.originalname);
+  const fileName = `${customPath}/${uuidv4()}${fileExtension}`;
+
+  const params: AWS.S3.PutObjectRequest = {
+    Bucket: BUCKET_NAME,
+    Key: fileName,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+  };
+
+  await s3.upload(params).promise();
+
+  return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
 }
 
-// 🔗 Obtener URL de descarga de un PDF
-async function getPDFUrl(fileName: string): Promise<string> {
-  try {
-    const params = {
-      Bucket: process.env.AWS_S3_BUCKET!,
-      Key: `pdfs/${fileName}`,
-    };
+// ✅ NUEVO: Descargar archivo como Buffer desde S3
+export async function getFileBufferFromS3(bucket: string, key: string): Promise<Buffer> {
+  const params = {
+    Bucket: bucket,
+    Key: key
+  };
 
-    const url = await getSignedUrl(s3, new GetObjectCommand(params), { expiresIn: 3600 });
-    console.log(`🔗 URL de descarga: ${url}`);
-    return url;
-  } catch (error) {
-    console.error("❌ Error generando URL:", error);
-    throw error;
+  const data = await s3.getObject(params).promise();
+  if (!data.Body || !(data.Body instanceof Buffer)) {
+    throw new Error('No se pudo obtener el archivo o el contenido no es un buffer');
   }
-}
 
-export { uploadPDF, getPDFUrl };
+  return data.Body;
+}

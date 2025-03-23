@@ -1,7 +1,11 @@
 
 // src/services/conversationMemory.ts
 
-type Message = { role: "user" | "assistant"; content: string };
+// ✅ conversationMemory.ts
+
+// src/services/conversationMemory.ts
+
+export type Message = { role: "user" | "assistant"; content: string };
 const sessionMemory = new Map<string, Message[]>();
 
 export function getHistory(sessionId: string): Message[] {

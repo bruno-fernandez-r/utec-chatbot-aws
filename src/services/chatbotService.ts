@@ -1,12 +1,13 @@
 import pdfParse from "pdf-parse";
-import { uploadPDF, getPDFUrl } from "./awsService";
-import { generateEmbeddings, generateResponse } from "./openaiService";
-import { saveVectorData, searchVectorData, documentExistsInPinecone } from "./pineconeService";
 import fs from "fs";
 import path from "path";
+import { generateEmbeddings, generateResponse } from "./openaiService";
+import { saveVectorData, searchVectorData, documentExistsInPinecone } from "./pineconeService";
 
+// 📂 Carpeta de PDFs locales (no usada actualmente pero mantenida para compatibilidad)
 const DOCUMENTS_FOLDER = "./documentos/";
 
+// Procesar todos los PDFs en carpeta local (opcional)
 export async function processAllPDFs() {
   try {
     const files = fs.readdirSync(DOCUMENTS_FOLDER).filter(file => file.endsWith(".pdf"));
@@ -26,9 +27,6 @@ export async function processAllPDFs() {
         continue;
       }
 
-      console.log("📤 Subiendo archivo a S3...");
-      await uploadPDF(filePath, fileName);
-
       console.log("🔍 Extrayendo texto del PDF...");
       const pdfData = await pdfParse(fs.readFileSync(filePath));
       const pdfText = pdfData.text;
@@ -40,6 +38,7 @@ export async function processAllPDFs() {
 
       console.log("🧠 Generando embeddings y guardando en Pinecone...");
       await saveVectorData(fileName, pdfText);
+
       console.log(`✅ ${fileName} procesado correctamente.`);
     }
   } catch (error) {
@@ -47,23 +46,18 @@ export async function processAllPDFs() {
   }
 }
 
-export async function searchQuery(query: string, sessionId: string = "default"): Promise<string> {
+// 🤖 Procesar una consulta con historial incluido
+export async function searchQuery(query: string, sessionId: string): Promise<string> {
   try {
     console.log(`🗣️ Consulta recibida: ${query}`);
 
-    console.log("🔍 Buscando en Pinecone...");
-    const content = await searchVectorData(query);
+    // 🔍 Buscar contexto relevante en Pinecone
+    const context = await searchVectorData(query);
 
-    if (!content.trim()) {
-      console.log("⚠️ No se encontraron datos relevantes.");
-      return "⚠️ No se encontraron datos relevantes.";
-    }
-
-    console.log("🤖 Generando respuesta con GPT-4...");
-    const response = await generateResponse(query, content, sessionId);
+    // 🤖 Generar respuesta usando contexto y sesión
+    const response = await generateResponse(query, context, sessionId);
 
     console.log(`💬 Respuesta generada: ${response}`);
-
     return response;
   } catch (error) {
     console.error("❌ Error en searchQuery:", error);

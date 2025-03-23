@@ -2,7 +2,8 @@
 
 import OpenAI from "openai";
 import * as dotenv from "dotenv";
-import { getHistory, appendHistory } from "./conversationMemory";
+import { getHistory, appendHistory, Message } from "./conversationMemory";
+import { ChatCompletionMessageParam } from "openai/resources/chat";
 
 dotenv.config();
 
@@ -49,7 +50,11 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
   }
 }
 
-export async function generateResponse(userQuery: string, context: string = "", sessionId = "default"): Promise<string> {
+export async function generateResponse(
+  userQuery: string,
+  context: string = "",
+  sessionId: string = "default"
+): Promise<string> {
   try {
     console.log("📌 Enviando consulta a OpenAI...");
 
@@ -57,13 +62,19 @@ export async function generateResponse(userQuery: string, context: string = "", 
       ? `Aquí tienes la información disponible:\n\n${context}`
       : "No se encontraron datos relevantes para responder esta consulta.";
 
-    const history = getHistory(sessionId);
+    // 🧠 Obtener historial y convertir al formato compatible con OpenAI
+    const history: Message[] = getHistory(sessionId);
+    const historyMessages: ChatCompletionMessageParam[] = history.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    // 🗣️ Armar mensajes
+    const messages: ChatCompletionMessageParam[] = [
       { role: "system", content: BEHAVIOR_PROMPT },
       { role: "system", content: cleanContext },
-      ...history,
-      { role: "user", content: userQuery },
+      ...historyMessages,
+      { role: "user", content: userQuery }
     ];
 
     const response = await openai.chat.completions.create({
@@ -75,6 +86,7 @@ export async function generateResponse(userQuery: string, context: string = "", 
 
     const reply = response.choices[0]?.message?.content || "No tengo información suficiente.";
 
+    // 💾 Guardar nuevo turno en el historial
     appendHistory(sessionId, { role: "user", content: userQuery });
     appendHistory(sessionId, { role: "assistant", content: reply });
 
