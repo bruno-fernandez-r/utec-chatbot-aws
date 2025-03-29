@@ -1,58 +1,24 @@
-import express, { Request, Response, Application } from "express";
-import cors from "cors";
-import bodyParser from "body-parser";
-import multer from "multer";
-import path from "path";
-import { handleUpload } from "./services/uploadService";
-import { searchQuery } from "./services/chatbotService";
 
-// Configuración de Express
-const app: Application = express();
+import express from "express";
+import cors from "cors";
+
+import chatbotRouter from "./controllers/files.controller";
+import trainingRouter from "./controllers/training.controller";
+import chatRouter from "./controllers/chat.controller";
+
+const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ✅ Primero los middlewares adecuados para multipart
+app.use(express.urlencoded({ extended: true })); // permite recibir formularios
+app.use(express.json({ type: ['application/json', 'text/plain'] })); // evita conflictos con form-data
 app.use(cors());
-app.use(bodyParser.json());
 
-// Multer en memoria para subida de archivos
-const upload = multer({ storage: multer.memoryStorage() });
+// 📁 Rutas
+app.use("/api/files", chatbotRouter);
+app.use("/api/train", trainingRouter);
+app.use("/chat", chatRouter);
 
-// 🧠 Endpoint del chatbot
-app.post("/chat", async (req: Request, res: Response) => {
-  try {
-    const { query, sessionId } = req.body;
-
-    if (!query || !sessionId) {
-      return res.status(400).json({ error: "Faltan campos requeridos: 'query' y 'sessionId'." });
-    }
-
-    const response = await searchQuery(query, sessionId);
-    return res.status(200).json({ response });
-  } catch (error) {
-    console.error("❌ Error en /chat:", error);
-    return res.status(500).json({ error: "Error interno del servidor" });
-  }
-});
-
-// 📤 Endpoint para subir y procesar un archivo
-app.post("/upload", upload.single("file"), async (req: Request, res: Response) => {
-  try {
-    const file = req.file;
-
-    if (!file) {
-      return res.status(400).json({ error: "No se subió ningún archivo." });
-    }
-
-    console.log("🟢 /upload alcanzado:", file.originalname);
-
-    const result = await handleUpload(file, "documentos"); // carpeta lógica en S3
-    res.status(200).json({ message: "Archivo procesado correctamente", url: result });
-  } catch (error) {
-    console.error("❌ Error en /upload:", error);
-    res.status(500).json({ error: "Error al procesar el documento." });
-  }
-});
-
-// 🚀 Levantar servidor
 app.listen(PORT, () => {
-  console.log(`🔥 Servidor en ejecución en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
 });

@@ -1,6 +1,3 @@
-// Este archivo manejará la lógica para interactuar con Pinecone, como guardar y buscar vectores.
-
-// ✅ Versión mejorada de pineconeService.ts con segmentación configurable, fragmentación por tokens y upsert en batch
 
 import { generateEmbeddings } from "./openaiService";
 import { pinecone } from "../config/pinecone";
@@ -19,25 +16,8 @@ const SCORE_FALLBACK = 0.4;
 const TOP_K = 15;
 const MAX_TOKENS_PER_FRAGMENT = 250;
 
-// ✅ Verificar si un documento ya existe
-export async function documentExistsInPinecone(id: string): Promise<boolean> {
-  try {
-    const index = pinecone.index(process.env.PINECONE_INDEX!);
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 1,
-      includeMetadata: true,
-      filter: { source: id },
-    });
-    return results.matches.length > 0;
-  } catch (error) {
-    console.error("❌ Error verificando en Pinecone:", error);
-    return false;
-  }
-}
-
-// ✅ Guardar vectores fragmentados
-export async function saveVectorData(id: string, content: string) {
+// ✅ Guardar vectores fragmentados con metadata.chatbotId y filename
+export async function saveVectorData(filename: string, content: string, chatbotId: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
@@ -65,7 +45,7 @@ export async function saveVectorData(id: string, content: string) {
 
     const vectors = await Promise.all(
       fragments.map(async (frag, i) => {
-        const sectionId = `${sanitizeId(id)}_part${i}`;
+        const sectionId = `${sanitizeId(chatbotId)}_${sanitizeId(filename)}_part${i}`;
         const embedding = await generateEmbeddings(frag.text);
         return {
           id: sectionId,
@@ -73,13 +53,14 @@ export async function saveVectorData(id: string, content: string) {
           metadata: {
             content: frag.text,
             title: frag.title,
-            source: id,
+            filename,
+            chatbotId,
           },
         };
       })
     );
 
-    await pinecone.index(process.env.PINECONE_INDEX!).upsert(vectors);
+    await index.upsert(vectors);
     console.log("🚀 Datos guardados en Pinecone exitosamente.");
   } catch (error) {
     console.error("❌ Error guardando en Pinecone:", error);
@@ -87,16 +68,67 @@ export async function saveVectorData(id: string, content: string) {
   }
 }
 
-// ✅ Buscar datos en Pinecone con historial (aunque aún no se usa dentro)
-export async function searchVectorData(query: string, _history: Message[] = []): Promise<string> {
+// ✅ Verificar si el documento ya existe para un chatbot
+export async function documentExistsInPinecone(filename: string, chatbotId: string): Promise<boolean> {
+  try {
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+    const results = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 1,
+      includeMetadata: true,
+      filter: {
+        filename: { $eq: filename },
+        chatbotId: { $eq: chatbotId },
+      },
+    });
+    return results.matches.length > 0;
+  } catch (error) {
+    console.error("❌ Error verificando en Pinecone:", error);
+    return false;
+  }
+}
+
+// ✅ Eliminar vectores por filename y chatbotId
+export async function deleteVectorsByFilenameAndChatbot(filename: string, chatbotId: string) {
+  try {
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+    const results = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 100,
+      includeMetadata: true,
+      filter: {
+        filename: { $eq: filename },
+        chatbotId: { $eq: chatbotId },
+      },
+    });
+
+    const ids = results.matches?.map((match) => match.id) || [];
+
+    if (ids.length === 0) {
+      console.log("⚠️ No se encontraron vectores para eliminar.");
+      return;
+    }
+
+    await index.deleteMany({ ids });
+    console.log(`🧹 Eliminados ${ids.length} vectores del archivo '${filename}' para chatbot '${chatbotId}'`);
+  } catch (error) {
+    console.error("❌ Error eliminando vectores:", error);
+  }
+}
+
+// ✅ Buscar datos solo del chatbot
+export async function searchVectorData(query: string, chatbotId: string, _history: Message[] = []): Promise<string> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
     const embedding = await generateEmbeddings(query);
 
-    let results = await index.query({
+    const results = await index.query({
       vector: embedding,
       topK: TOP_K,
       includeMetadata: true,
+      filter: {
+        chatbotId: { $eq: chatbotId },
+      },
     });
 
     if (!results.matches || results.matches.length === 0) {
@@ -116,7 +148,7 @@ export async function searchVectorData(query: string, _history: Message[] = []):
     relevantMatches.forEach((match) => {
       const title = typeof match.metadata?.title === "string" ? match.metadata.title : "Información relevante";
       const content = typeof match.metadata?.content === "string" ? match.metadata.content : "";
-      const source = match.metadata?.source || "desconocido";
+      const source = match.metadata?.filename || "desconocido";
 
       if (!groupedResults[title]) {
         groupedResults[title] = [];
@@ -136,34 +168,7 @@ export async function searchVectorData(query: string, _history: Message[] = []):
   }
 }
 
-// ✅ Eliminar vectores por documento (source)
-export async function deleteVectorsBySource(source: string) {
-  try {
-    const index = pinecone.index(process.env.PINECONE_INDEX!);
-
-    const results = await index.query({
-      vector: Array(1536).fill(0),
-      topK: 100,
-      includeMetadata: true,
-      filter: { source },
-    });
-
-    const ids = results.matches?.map((match) => match.id) || [];
-
-    if (ids.length === 0) {
-      console.log("⚠️ No se encontraron vectores para eliminar.");
-      return;
-    }
-
-    await index.deleteMany({ ids });
-    console.log(`🧹 Eliminados ${ids.length} vectores del documento '${source}'`);
-  } catch (error) {
-    console.error("❌ Error eliminando vectores por source:", error);
-  }
-}
-
-// ✅ Sanitiza el ID para que sea compatible con Pinecone
+// ✅ Sanitiza IDs
 function sanitizeId(id: string): string {
   return id.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x00-\x7F]/g, "");
 }
-
