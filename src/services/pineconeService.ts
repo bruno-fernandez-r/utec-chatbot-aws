@@ -1,4 +1,3 @@
-
 import { generateEmbeddings } from "./openaiService";
 import { pinecone } from "../config/pinecone";
 import { encode } from "gpt-3-encoder";
@@ -16,7 +15,6 @@ const SCORE_FALLBACK = 0.4;
 const TOP_K = 15;
 const MAX_TOKENS_PER_FRAGMENT = 250;
 
-// ✅ Guardar vectores fragmentados con metadata.chatbotId y filename
 export async function saveVectorData(filename: string, content: string, chatbotId: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -68,7 +66,6 @@ export async function saveVectorData(filename: string, content: string, chatbotI
   }
 }
 
-// ✅ Verificar si el documento ya existe para un chatbot
 export async function documentExistsInPinecone(filename: string, chatbotId: string): Promise<boolean> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -76,22 +73,19 @@ export async function documentExistsInPinecone(filename: string, chatbotId: stri
       vector: Array(1536).fill(0),
       topK: 1,
       includeMetadata: true,
-      filter: {
-        filename: { $eq: filename },
-        chatbotId: { $eq: chatbotId },
-      },
     });
-    return results.matches.length > 0;
+    return results.matches.some(match => match.id.startsWith(`${sanitizeId(chatbotId)}_${sanitizeId(filename)}_part`));
   } catch (error) {
     console.error("❌ Error verificando en Pinecone:", error);
     return false;
   }
 }
 
-// ✅ Eliminar vectores por filename y chatbotId
-export async function deleteVectorsByFilenameAndChatbot(filename: string, chatbotId: string) {
+export async function deleteVectorsManualmente(filename: string, chatbotId: string) {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    // 1. Buscar los vectores existentes para obtener sus IDs
     const results = await index.query({
       vector: Array(1536).fill(0),
       topK: 100,
@@ -109,14 +103,16 @@ export async function deleteVectorsByFilenameAndChatbot(filename: string, chatbo
       return;
     }
 
-    await index.deleteMany({ ids });
+    // 2. Eliminar los vectores por IDs (sin filtros)
+    await index.deleteMany({ ids }); // ✅ esta línea es válida y correcta
+
     console.log(`🧹 Eliminados ${ids.length} vectores del archivo '${filename}' para chatbot '${chatbotId}'`);
   } catch (error) {
     console.error("❌ Error eliminando vectores:", error);
   }
 }
 
-// ✅ Buscar datos solo del chatbot
+
 export async function searchVectorData(query: string, chatbotId: string, _history: Message[] = []): Promise<string> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -168,7 +164,6 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
   }
 }
 
-// ✅ Sanitiza IDs
 function sanitizeId(id: string): string {
   return id.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x00-\x7F]/g, "");
 }

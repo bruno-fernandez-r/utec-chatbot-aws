@@ -6,7 +6,7 @@ import os from 'os';
 import { AzureBlobService } from '../services/azureBlobService';
 import {
   documentExistsInPinecone,
-  deleteVectorsByFilenameAndChatbot,
+  deleteVectorsManualmente,
   saveVectorData
 } from '../services/pineconeService';
 
@@ -25,18 +25,18 @@ router.post('/:filename', async (req: Request, res: Response) => {
     // 1. Descargar archivo actual desde Azure
     const fileBuffer = await AzureBlobService.downloadFile(filename);
 
-    // 2. Sobrescribir el archivo (se reemplaza al entrenar con nuevo contenido)
+    // 2. Sobrescribir el archivo en Azure (por si fue reemplazado localmente)
     await AzureBlobService.uploadFile(fileBuffer, filename);
 
     // 3. Guardar archivo temporal para procesamiento
     const tempPath = path.join(os.tmpdir(), filename);
     fs.writeFileSync(tempPath, fileBuffer);
 
-    // 4. Eliminar vectores anteriores
+    // 4. Eliminar vectores anteriores si existen
     const yaExiste = await documentExistsInPinecone(filename, chatbotId);
     if (yaExiste) {
       console.log(`🧹 Eliminando vectores anteriores de ${filename} para chatbot ${chatbotId}...`);
-      await deleteVectorsByFilenameAndChatbot(filename, chatbotId);
+      await deleteVectorsManualmente(filename, chatbotId);
     }
 
     // 5. Extraer texto del PDF
