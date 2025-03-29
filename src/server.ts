@@ -2,9 +2,9 @@
 import express from "express";
 import cors from "cors";
 
-import chatbotRouter from "./controllers/files.controller";
-import trainingRouter from "./controllers/training.controller";
-import chatRouter from "./controllers/chat.controller";
+import filesRoutes from './routes/filesRoutes';
+import trainingRoutes from './routes/trainingRoutes';
+import chatRoutes from './routes/chatRoutes';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,9 +15,9 @@ app.use(express.json({ type: ['application/json', 'text/plain'] })); // evita co
 app.use(cors());
 
 // 📁 Rutas
-app.use("/api/files", chatbotRouter);
-app.use("/api/train", trainingRouter);
-app.use("/chat", chatRouter);
+app.use('/files', filesRoutes);
+app.use('/train', trainingRoutes);
+app.use('/chat', chatRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
