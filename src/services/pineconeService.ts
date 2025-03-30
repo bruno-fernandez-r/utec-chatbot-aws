@@ -118,6 +118,27 @@ export async function deleteVectorsManualmente(filename: string, chatbotId: stri
   }
 }
 
+export async function deleteAllVectorsByChatbot(chatbotId: string) {
+  try {
+    const filenames = await listDocumentsByChatbot(chatbotId);
+
+    if (filenames.length === 0) {
+      console.log(`⚠️ No hay vectores asociados al chatbot ${chatbotId}`);
+      return;
+    }
+
+    for (const filename of filenames) {
+      await deleteVectorsManualmente(filename, chatbotId);
+    }
+
+    console.log(`🧹 Todos los vectores del chatbot '${chatbotId}' han sido eliminados.`);
+  } catch (error) {
+    console.error("❌ Error eliminando vectores del chatbot:", error);
+  }
+}
+
+
+
 export async function findChatbotsByFilename(filename: string): Promise<string[]> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);

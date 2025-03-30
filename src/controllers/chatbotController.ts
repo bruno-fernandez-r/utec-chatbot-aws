@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import * as chatbotService from "../services/chatbotService";
 import * as promptService from "../services/promptService";
+import { deleteAllVectorsByChatbot } from "../services/pineconeService";
 
 export const getAllChatbots = async (_req: Request, res: Response) => {
   const chatbots = await chatbotService.getAllChatbots();
@@ -47,11 +48,18 @@ export const updateChatbot = async (req: Request, res: Response) => {
 };
 
 export const deleteChatbot = async (req: Request, res: Response) => {
-  const success = await chatbotService.deleteChatbot(req.params.id);
+  const chatbotId = req.params.id;
+
+  const success = await chatbotService.deleteChatbot(chatbotId);
   if (!success) return res.status(404).json({ message: "Chatbot no encontrado" });
 
-  await promptService.deletePrompt(req.params.id).catch(() => {});
-  res.json({ message: "Chatbot y prompt eliminados." });
+  // 🧹 Limpiar prompt
+  await promptService.deletePrompt(chatbotId).catch(() => {});
+
+  // 🧽 Limpiar vectores en Pinecone
+  await deleteAllVectorsByChatbot(chatbotId).catch(() => {});
+
+  res.json({ message: "Chatbot, prompt y vectores eliminados." });
 };
 
 export const getPrompt = async (req: Request, res: Response) => {
