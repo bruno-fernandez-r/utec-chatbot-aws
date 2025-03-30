@@ -3,6 +3,10 @@ import { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import { AzureBlobService } from "../services/azureBlobService";
+import {
+  deleteVectorsManualmente,
+  findChatbotsByFilename
+} from "../services/pineconeService";
 
 const ALLOWED_EXTENSIONS = [".pdf"];
 
@@ -45,10 +49,27 @@ export const listFiles = async (_req: Request, res: Response) => {
 
 export const deleteFile = async (req: Request, res: Response) => {
   const { filename } = req.params;
+
   try {
+    console.log(`🗑️ Eliminando archivo '${filename}'...`);
+
+    // 1. Buscar todos los chatbots que tengan vectores de este archivo
+    const chatbotIds = await findChatbotsByFilename(filename);
+
+    // 2. Eliminar los vectores para cada chatbot
+    for (const chatbotId of chatbotIds) {
+      console.log(`🧹 Eliminando vectores de '${filename}' para chatbot '${chatbotId}'`);
+      await deleteVectorsManualmente(filename, chatbotId);
+    }
+
+    // 3. Eliminar archivo de Azure
     await AzureBlobService.deleteFile(filename);
-    console.log(`🗑️ Archivo '${filename}' eliminado de Azure Blob`);
-    res.status(200).json({ message: `Archivo '${filename}' eliminado correctamente.` });
+    console.log(`✅ Archivo '${filename}' eliminado de Azure Blob`);
+
+    res.status(200).json({
+      message: `Archivo '${filename}' y sus vectores asociados fueron eliminados correctamente.`,
+      affectedBots: chatbotIds,
+    });
   } catch (error) {
     console.error("❌ Error al eliminar archivo:", error);
     res.status(500).json({ error: "Error al eliminar el archivo." });

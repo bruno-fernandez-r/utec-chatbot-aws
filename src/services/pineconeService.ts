@@ -118,6 +118,30 @@ export async function deleteVectorsManualmente(filename: string, chatbotId: stri
   }
 }
 
+export async function findChatbotsByFilename(filename: string): Promise<string[]> {
+  try {
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    const results = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 1000,
+      includeMetadata: true,
+      filter: { filename: { $eq: filename } },
+    });
+
+    const bots = results.matches
+      ?.map(m => m.metadata?.chatbotId)
+      .filter(Boolean) as string[];
+
+    return Array.from(new Set(bots));
+  } catch (error) {
+    console.error("❌ Error buscando bots por archivo:", error);
+    return [];
+  }
+}
+
+
+
 export async function searchVectorData(query: string, chatbotId: string, _history: Message[] = []): Promise<string> {
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -189,6 +213,8 @@ export async function listDocumentsByChatbot(chatbotId: string): Promise<string[
     return [];
   }
 }
+
+
 
 function sanitizeId(id: string): string {
   return id.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x00-\x7F]/g, "");
