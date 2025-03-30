@@ -6,10 +6,6 @@ import { Message } from "./conversationMemory";
 
 dotenv.config();
 
-if (!process.env.PINECONE_INDEX) {
-  throw new Error("❌ ERROR: PINECONE_INDEX no está definido en .env");
-}
-
 const SCORE_THRESHOLD = 0.3;
 const SCORE_FALLBACK = 0.4;
 const TOP_K = 15;
@@ -73,8 +69,12 @@ export async function documentExistsInPinecone(filename: string, chatbotId: stri
       vector: Array(1536).fill(0),
       topK: 1,
       includeMetadata: true,
+      filter: {
+        filename: { $eq: filename },
+        chatbotId: { $eq: chatbotId },
+      },
     });
-    return results.matches.some(match => match.id.startsWith(`${sanitizeId(chatbotId)}_${sanitizeId(filename)}_part`));
+    return results.matches?.some(match => match.id.startsWith(`${sanitizeId(chatbotId)}_${sanitizeId(filename)}_part`)) ?? false;
   } catch (error) {
     console.error("❌ Error verificando en Pinecone:", error);
     return false;
@@ -85,33 +85,38 @@ export async function deleteVectorsManualmente(filename: string, chatbotId: stri
   try {
     const index = pinecone.index(process.env.PINECONE_INDEX!);
 
-    // 1. Buscar los vectores existentes para obtener sus IDs
+    // 1️⃣ Buscar vectores por query + filtro
     const results = await index.query({
       vector: Array(1536).fill(0),
-      topK: 100,
+      topK: 1000,
       includeMetadata: true,
       filter: {
-        filename: { $eq: filename },
         chatbotId: { $eq: chatbotId },
-      },
+        filename: { $eq: filename }
+      }
     });
 
-    const ids = results.matches?.map((match) => match.id) || [];
+    const idsToDelete = results.matches?.map(match => match.id) || [];
 
-    if (ids.length === 0) {
+    console.log("🆔 IDs a eliminar:", idsToDelete);
+
+    if (idsToDelete.length === 0) {
       console.log("⚠️ No se encontraron vectores para eliminar.");
       return;
     }
 
-    // 2. Eliminar los vectores por IDs (sin filtros)
-    await index.deleteMany({ ids }); // ✅ esta línea es válida y correcta
+    // ✅ Eliminar por ID (permitido en Serverless)
+    for (const id of idsToDelete) {
+      await index.deleteOne(id);
+      console.log(`🧽 Vector eliminado: ${id}`);
+    }
+    
 
-    console.log(`🧹 Eliminados ${ids.length} vectores del archivo '${filename}' para chatbot '${chatbotId}'`);
+    console.log(`🧹 Eliminados ${idsToDelete.length} vectores del archivo '${filename}' para chatbot '${chatbotId}'`);
   } catch (error) {
     console.error("❌ Error eliminando vectores:", error);
   }
 }
-
 
 export async function searchVectorData(query: string, chatbotId: string, _history: Message[] = []): Promise<string> {
   try {
@@ -161,6 +166,27 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
   } catch (error) {
     console.error("❌ Error buscando en Pinecone:", error);
     throw new Error("Error buscando datos en Pinecone");
+  }
+}
+
+export async function listDocumentsByChatbot(chatbotId: string): Promise<string[]> {
+  try {
+    const index = pinecone.index(process.env.PINECONE_INDEX!);
+
+    const results = await index.query({
+      vector: Array(1536).fill(0),
+      topK: 1000,
+      includeMetadata: true,
+      filter: {
+        chatbotId: { $eq: chatbotId },
+      },
+    });
+
+    const filenames = results.matches?.map(m => m.metadata?.filename).filter(Boolean) as string[];
+    return Array.from(new Set(filenames));
+  } catch (error) {
+    console.error("❌ Error listando documentos por chatbot:", error);
+    return [];
   }
 }
 

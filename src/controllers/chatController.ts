@@ -11,7 +11,7 @@ export const chat = async (req: Request, res: Response) => {
 
   try {
     const context = await searchVectorData(query, chatbotId);
-    const response = await generateResponse(query, context, sessionId);
+    const response = await generateResponse(query, context, sessionId, chatbotId);
     res.status(200).json({ response });
   } catch (error) {
     console.error("❌ Error al procesar la consulta:", error);

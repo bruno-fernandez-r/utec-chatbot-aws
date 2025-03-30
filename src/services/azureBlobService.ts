@@ -1,6 +1,5 @@
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
 import dotenv from 'dotenv';
-import stream from 'stream';
 
 dotenv.config();
 
@@ -21,15 +20,13 @@ export class AzureBlobService {
 
   static async uploadFile(buffer: string | Buffer, filename: string): Promise<string> {
     const containerClient = this.getContainerClient();
-    await containerClient.createIfNotExists(); // privado por defecto
+    await containerClient.createIfNotExists(); // contenedor se crea si no existe
 
     const blockBlobClient = containerClient.getBlockBlobClient(filename);
-    const readableStream = new stream.PassThrough();
-
     const safeBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    readableStream.end(safeBuffer);
 
-    await blockBlobClient.uploadStream(readableStream, 4 * 1024 * 1024, 20);
+    await blockBlobClient.uploadData(safeBuffer);
+    console.log(`☁️ Archivo '${filename}' subido correctamente a Azure Blob`);
     return filename;
   }
 
@@ -49,7 +46,7 @@ export class AzureBlobService {
     const blobClient = containerClient.getBlobClient(filename);
 
     if (!(await blobClient.exists())) {
-      throw new Error('El archivo no existe en Azure Blob Storage.');
+      throw new Error(`El archivo '${filename}' no existe en Azure Blob Storage.`);
     }
 
     const downloadResponse = await blobClient.download();
@@ -67,5 +64,6 @@ export class AzureBlobService {
     const blobClient = containerClient.getBlobClient(filename);
 
     await blobClient.deleteIfExists();
+    console.log(`🗑️ Archivo '${filename}' eliminado de Azure Blob`);
   }
 }

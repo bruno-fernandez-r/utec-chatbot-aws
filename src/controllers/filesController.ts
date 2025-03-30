@@ -1,7 +1,10 @@
 
 import { Request, Response } from "express";
 import fs from "fs";
+import path from "path";
 import { AzureBlobService } from "../services/azureBlobService";
+
+const ALLOWED_EXTENSIONS = [".pdf"];
 
 export const uploadFile = async (req: Request, res: Response) => {
   try {
@@ -11,15 +14,22 @@ export const uploadFile = async (req: Request, res: Response) => {
 
     const tempPath = req.file.path;
     const originalName = req.file.originalname;
+    const fileExt = path.extname(originalName).toLowerCase();
+
+    if (!ALLOWED_EXTENSIONS.includes(fileExt)) {
+      fs.unlinkSync(tempPath); // eliminar archivo si es inválido
+      return res.status(400).json({ error: "Solo se permiten archivos PDF (.pdf)" });
+    }
+
     const fileBuffer = fs.readFileSync(tempPath);
-
     await AzureBlobService.uploadFile(fileBuffer, originalName);
-    fs.unlinkSync(tempPath); // limpiar archivo temporal
+    fs.unlinkSync(tempPath);
 
-    res.status(200).json({ message: "✅ Archivo subido correctamente a Azure.", filename: originalName });
+    console.log(`✅ Archivo '${originalName}' subido correctamente a Azure Blob`);
+    res.status(200).json({ message: "Archivo subido correctamente a Azure.", filename: originalName });
   } catch (error) {
     console.error("❌ Error al subir archivo:", error);
-    res.status(500).json({ error: "Error al subir el archivo." });
+    res.status(500).json({ error: "Error al subir el archivo a Azure." });
   }
 };
 
@@ -37,10 +47,11 @@ export const deleteFile = async (req: Request, res: Response) => {
   const { filename } = req.params;
   try {
     await AzureBlobService.deleteFile(filename);
-    res.status(200).json({ message: `🗑️ Archivo '${filename}' eliminado correctamente.` });
+    console.log(`🗑️ Archivo '${filename}' eliminado de Azure Blob`);
+    res.status(200).json({ message: `Archivo '${filename}' eliminado correctamente.` });
   } catch (error) {
     console.error("❌ Error al eliminar archivo:", error);
-    res.status(500).json({ error: "Error al eliminar archivo." });
+    res.status(500).json({ error: "Error al eliminar el archivo." });
   }
 };
 
@@ -48,7 +59,11 @@ export const downloadFile = async (req: Request, res: Response) => {
   const { filename } = req.params;
   try {
     const fileBuffer = await AzureBlobService.downloadFile(filename);
-    res.setHeader("Content-Disposition", `attachment; filename=${filename}`);
+    if (!fileBuffer) {
+      return res.status(404).json({ error: `Archivo '${filename}' no encontrado.` });
+    }
+
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(fileBuffer);
   } catch (error) {
     console.error("❌ Error al descargar archivo:", error);

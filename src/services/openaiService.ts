@@ -1,40 +1,13 @@
-// Este archivo manejará la lógica para interactuar con la API de OpenAI, como la creación de embeddings y generación de respuestas.
-
 import OpenAI from "openai";
 import * as dotenv from "dotenv";
 import { getHistory, appendHistory, Message } from "./conversationMemory";
 import { ChatCompletionMessageParam } from "openai/resources/chat";
+import { getChatbotById } from "../services/chatbotService";
+import { getPrompt } from "../services/promptService";
 
 dotenv.config();
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
-
-const BEHAVIOR_PROMPT = `
-Tu nombre es UTEChat y eres un asistente virtual de la Universidad Tecnológica UTEC. Eres especialista en la búsqueda de información dentro de la base de conocimiento de UTEC y en el almacenamiento de información relacionada con leads.
-
-# Objetivo de UTEChat
-Brindar atención eficiente a estudiantes, docentes, analistas de carrera y colaboradores, generando respuestas basadas exclusivamente en la información proporcionada en la base de conocimiento. Asegúrate de no inventar ni suponer información.
-
-# Interacción Inicial
-1. Si el usuario saluda (por ejemplo, "Hola", "Buen día", etc.), UTEChat debe iniciar la conversación con este formato exacto:
-   - "Hola, soy UTEChat. ¿En qué puedo ayudarte?"
-2. Si el usuario realiza una consulta directamente, UTEChat debe responder siempre en la primera interacción con este formato exacto:
-   - "Hola, soy UTEChat. Resolvamos tu consulta."
-3. En todas las interacciones posteriores, UTEChat debe omitir el saludo inicial y utilizar únicamente:
-   - "Bien, resolvamos tu consulta."
-
-# Estilo de Comunicación
-- Usa un tono profesional, amigable y cercano.
-- Organiza la información con listas y tópicos.
-- Usa emojis de forma moderada para mejorar la comprensión.
-- Mantén las respuestas claras y concisas, con un máximo de 250 palabras.
-
-# Manejo de Consultas Complejas
-Si la información recuperada no contiene una respuesta directa, indica de manera transparente que no tienes información suficiente y sugiere fuentes oficiales donde el usuario pueda obtener más detalles.
-
-# Normativas de Privacidad
-UTEChat debe priorizar la seguridad y confidencialidad de la información de los usuarios en todo momento, cumpliendo con normativas como ISO 27001.
-`;
 
 export async function generateEmbeddings(text: string): Promise<number[]> {
   try {
@@ -53,40 +26,56 @@ export async function generateEmbeddings(text: string): Promise<number[]> {
 export async function generateResponse(
   userQuery: string,
   context: string = "",
-  sessionId: string = "default"
+  sessionId: string = "default",
+  chatbotId: string
 ): Promise<string> {
   try {
-    console.log("📌 Enviando consulta a OpenAI...");
+    console.log("📥 Generando respuesta para chatbot:", chatbotId);
 
+    // 🧠 Obtener el prompt del chatbot desde Azure Blob
+    const prompt = await getPrompt(chatbotId);
+    if (!prompt) {
+      console.warn(`⚠️ Prompt no encontrado para chatbotId=${chatbotId}, usando valor por defecto.`);
+    }
+
+    // ⚙️ Obtener configuración del chatbot desde Azure Table Storage
+    const chatbotConfig = await getChatbotById(chatbotId);
+    if (!chatbotConfig) {
+      console.error(`❌ Chatbot no encontrado en Table Storage: ${chatbotId}`);
+      return "No se encontró la configuración del chatbot solicitado.";
+    }
+
+    // 📚 Contexto procesado
     const cleanContext = context.trim().length > 0
       ? `Aquí tienes la información disponible:\n\n${context}`
       : "No se encontraron datos relevantes para responder esta consulta.";
 
-    // 🧠 Obtener historial y convertir al formato compatible con OpenAI
+    // 📜 Historial de conversación
     const history: Message[] = getHistory(sessionId);
     const historyMessages: ChatCompletionMessageParam[] = history.map(m => ({
       role: m.role,
       content: m.content,
     }));
 
-    // 🗣️ Armar mensajes
+    // 🧠 Armar mensajes para OpenAI
     const messages: ChatCompletionMessageParam[] = [
-      { role: "system", content: BEHAVIOR_PROMPT },
+      { role: "system", content: prompt || "Eres un asistente virtual de UTEC." },
       { role: "system", content: cleanContext },
       ...historyMessages,
       { role: "user", content: userQuery }
     ];
 
+    // 🧪 Enviar a OpenAI
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: chatbotConfig.model || "gpt-4",
       messages,
-      max_tokens: cleanContext.length > 1500 ? 700 : 500,
-      temperature: 0.4,
+      max_tokens: chatbotConfig.maxTokens || 500,
+      temperature: chatbotConfig.temperature ?? 0.5,
     });
 
     const reply = response.choices[0]?.message?.content || "No tengo información suficiente.";
 
-    // 💾 Guardar nuevo turno en el historial
+    // 💾 Guardar en historial
     appendHistory(sessionId, { role: "user", content: userQuery });
     appendHistory(sessionId, { role: "assistant", content: reply });
 
