@@ -8,8 +8,8 @@ dotenv.config();
 
 const SCORE_THRESHOLD = 0.3;
 const SCORE_FALLBACK = 0.4;
-const TOP_K = 15;
-const MAX_TOKENS_PER_FRAGMENT = 250;
+const TOP_K = 10;
+const MAX_TOKENS_PER_FRAGMENT = 250; 
 
 export async function saveVectorData(filename: string, content: string, chatbotId: string) {
   try {
@@ -155,6 +155,10 @@ export async function searchVectorData(query: string, chatbotId: string, _histor
         chatbotId: { $eq: chatbotId },
       },
     });
+    
+    // 👉 Log de los resultados con score
+    results.matches?.forEach(m => console.log(`🧠 ${m.metadata?.filename} - Score: ${m.score}`));
+
 
     if (!results.matches || results.matches.length === 0) {
       return "⚠️ No se encontraron resultados.";

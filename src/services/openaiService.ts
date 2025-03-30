@@ -67,10 +67,10 @@ export async function generateResponse(
 
     // 🧪 Enviar a OpenAI
     const response = await openai.chat.completions.create({
-      model: chatbotConfig.model || "gpt-4",
+      model: chatbotConfig.model || "gpt-4o",
       messages,
       max_tokens: chatbotConfig.maxTokens || 500,
-      temperature: chatbotConfig.temperature ?? 0.5,
+      temperature: chatbotConfig.temperature ?? 0.4,
     });
 
     const reply = response.choices[0]?.message?.content || "No tengo información suficiente.";

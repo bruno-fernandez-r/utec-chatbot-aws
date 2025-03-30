@@ -1,6 +1,6 @@
 
 import { TableClient, AzureNamedKeyCredential } from "@azure/data-tables";
-import { Chatbot } from "../models/chatbotModel";
+import { Chatbot, ChatbotEditable } from "../models/chatbotModel";
 import { v4 as uuidv4 } from "uuid";
 
 // ✅ Validación segura de entorno
@@ -18,8 +18,8 @@ const client = new TableClient(
   tableName,
   credential
 );
-
-export async function createChatbot(data: Omit<Chatbot, "id" | "createdAt">): Promise<Chatbot> {
+export async function createChatbot(data: ChatbotEditable): Promise<Chatbot>
+ {
   const id = uuidv4();
   const createdAt = new Date().toISOString();
 
@@ -50,7 +50,7 @@ export async function createChatbot(data: Omit<Chatbot, "id" | "createdAt">): Pr
 export async function getAllChatbots(): Promise<Chatbot[]> {
   const chatbots: Chatbot[] = [];
 
-  for await (const entity of client.listEntities()) {
+  for await (const entity of client.listEntities({ queryOptions: { filter: `PartitionKey eq 'chatbots'` } })) {
     chatbots.push({
       id: entity.rowKey as string,
       name: entity.name as string,
@@ -80,6 +80,58 @@ export async function getChatbotById(id: string): Promise<Chatbot | null> {
   } catch {
     return null;
   }
+}
+
+export async function getChatbotByName(name: string): Promise<Chatbot | null> {
+  for await (const entity of client.listEntities({
+    queryOptions: {
+      filter: `PartitionKey eq 'chatbots' and name eq '${name}'`
+    }
+  })) {
+    return {
+      id: entity.rowKey as string,
+      name: entity.name as string,
+      description: entity.description as string,
+      model: entity.model as string,
+      temperature: Number(entity.temperature),
+      maxTokens: Number(entity.maxTokens),
+      createdAt: entity.createdAt as string,
+    };
+  }
+
+  return null;
+}
+
+export async function updateChatbot(id: string, updates: Partial<ChatbotEditable>): Promise<Chatbot | null>
+ {
+  const existing = await getChatbotById(id);
+  if (!existing) return null;
+
+  // Si cambia el nombre, verificar duplicados
+  if (updates.name && updates.name !== existing.name) {
+    const sameName = await getChatbotByName(updates.name);
+    if (sameName) throw new Error("DUPLICATE_NAME");
+  }
+
+  const updated = {
+    ...existing,
+    ...updates,
+  };
+
+  const entity = {
+    partitionKey: "chatbots",
+    rowKey: id,
+    name: updated.name,
+    description: updated.description ?? "",
+    model: updated.model ?? "gpt-4o",
+    temperature: updated.temperature ?? 0.5,
+    maxTokens: updated.maxTokens ?? 500,
+    createdAt: updated.createdAt,
+  };
+
+  await client.upsertEntity(entity, "Replace");
+
+  return updated;
 }
 
 export async function deleteChatbot(id: string): Promise<boolean> {

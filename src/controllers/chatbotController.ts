@@ -15,8 +15,35 @@ export const getChatbotById = async (req: Request, res: Response) => {
 };
 
 export const createChatbot = async (req: Request, res: Response) => {
+  const { name } = req.body;
+
+  // Validar nombre duplicado
+  const exists = await chatbotService.getChatbotByName(name);
+  if (exists) {
+    return res.status(400).json({ error: "Ya existe un chatbot con ese nombre." });
+  }
+
   const newBot = await chatbotService.createChatbot(req.body);
   res.status(201).json(newBot);
+};
+
+export const updateChatbot = async (req: Request, res: Response) => {
+  const chatbotId = req.params.id;
+  const updates = req.body;
+
+  try {
+    const updated = await chatbotService.updateChatbot(chatbotId, updates);
+    if (!updated) {
+      return res.status(404).json({ message: "Chatbot no encontrado" });
+    }
+    res.json(updated);
+  } catch (error: any) {
+    if (error.message === "DUPLICATE_NAME") {
+      return res.status(400).json({ error: "Ya existe un chatbot con ese nombre." });
+    }
+    console.error("❌ Error al actualizar chatbot:", error);
+    res.status(500).json({ error: "Error al actualizar el chatbot" });
+  }
 };
 
 export const deleteChatbot = async (req: Request, res: Response) => {

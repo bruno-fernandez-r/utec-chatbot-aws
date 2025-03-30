@@ -1,8 +1,10 @@
+
 import express from "express";
 import {
   getAllChatbots,
   getChatbotById,
   createChatbot,
+  updateChatbot, // 🆕
   deleteChatbot,
   getPrompt,
   updatePrompt,
@@ -20,6 +22,7 @@ router.delete("/:id/prompt", deletePrompt);
 router.get("/", getAllChatbots);
 router.get("/:id", getChatbotById);
 router.post("/", createChatbot);
+router.put("/:id", updateChatbot); // 🆕 Añadido
 router.delete("/:id", deleteChatbot);
 
 console.log("📡 chatbotRoutes cargado");
