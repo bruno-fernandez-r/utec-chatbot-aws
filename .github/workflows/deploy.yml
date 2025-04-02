@@ -1,5 +1,5 @@
 
-name: Deploy to Azure Container App
+name: Build and Push to ACR
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,13 +28,3 @@ jobs:
       - name: 📦 Push de imagen a ACR
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/chatbotutec:latest
-
-      - name: 🚀 Actualizar Container App en Azure
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: ${{ secrets.ACR_USERNAME }}
-          containerAppName: ${{ secrets.CONTAINER_APP_NAME }}
-          resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-          imageToDeploy: ${{ secrets.ACR_LOGIN_SERVER }}/chatbotutec:latest
-          environmentVariables: |
-            AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
