@@ -15,6 +15,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ type: ['application/json', 'text/plain'] }));
 app.use(cors());
 
+// 🟢 Ruta raíz que muestra el estado del bot
+app.get('/', (req, res) => {
+  res.set('Content-Type', 'text/plain; charset=utf-8');
+  res.send('🤖 Chatbot UTEC operativo');
+});
+
 app.use('/files', filesRoutes);
 app.use('/train', trainingRoutes);
 app.use('/chat', chatRoutes);
